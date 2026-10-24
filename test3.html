@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <title>ESP32 Cam Robot</title>
+    <style>
+        body {
+            background-color: #111;
+            color: white;
+            text-align: center;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 10px;
+        }
+        img {
+            width: 100%;
+            max-width: 400px;
+            border: 3px solid #333;
+            border-radius: 8px;
+        }
+        .arrows {
+            font-size: 40px;
+            color: #ff3333;
+        }
+        td.button {
+            background-color: #222;
+            border-radius: 20%;
+            box-shadow: 4px 4px #555;
+            width: 80px;
+            height: 70px;
+        }
+        td.button:active {
+            transform: translate(4px,4px);
+            box-shadow: none;
+        }
+        a {
+            text-decoration: none;
+            display: block;
+            width: 100%;
+            height: 100%;
+            line-height: 70px;
+        }
+        .slider {
+            width: 100%;
+            height: 15px;
+            border-radius: 5px;
+            background: #444;
+            outline: none;
+        }
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 25px;
+            height: 25px;
+            border-radius: 50%;
+            background: red;
+            cursor: pointer;
+        }
+        table {
+            margin: 15px auto;
+        }
+    </style>
+</head>
+<body>
+    <h2>ESP32 Cam Robot</h2>
+    <img id="cameraImage" src="/stream">
+
+    <table CELLSPACING="12">
+        <tr>
+            <td></td>
+            <td class="button"><a href="/move?dir=1"><span class="arrows">⇧</span></a></td>
+            <td></td>
+        </tr>
+        <tr>
+            <td class="button"><a href="/move?dir=3"><span class="arrows">⇦</span></a></td>
+            <td class="button"><a href="/move?dir=0"><span class="arrows">⏹</span></a></td>
+            <td class="button"><a href="/move?dir=4"><span class="arrows">⇨</span></a></td>
+        </tr>
+        <tr>
+            <td></td>
+            <td class="button"><a href="/move?dir=2"><span class="arrows">⇩</span></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+    <div style="max-width:400px; margin:auto; text-align:left;">
+        <p><b>Speed:</b></p>
+        <input type="range" min="0" max="1023" value="600" class="slider" 
+               oninput='updateSlider("speed", this.value)'>
+
+        <p><b>Light:</b></p>
+        <input type="range" min="0" max="1023" value="0" class="slider" 
+               oninput='updateSlider("light", this.value)'>
+    </div>
+
+    <script>
+        function updateSlider(key, value) {
+            var xhr = new XMLHttpRequest();
+            xhr.open("GET", "/" + key + "?value=" + value, true);
+            xhr.send();
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,271 @@
+try:
+    import usocket as socket
+except:
+    import socket
+
+from utime import sleep_ms, sleep
+import network
+from machine import Pin
+import gc
+
+gc.collect()
+
+# ================== PIN DEFINITIONS ==================
+led = Pin(2, Pin.OUT)          # Built-in LED (ESP8266/ESP32)
+
+# Motor pins (change if needed)
+ma1 = Pin(4, Pin.OUT)          # Left motor pin 1
+ma2 = Pin(16, Pin.OUT)         # Left motor pin 2
+mb1 = Pin(17, Pin.OUT)         # Right motor pin 1
+mb2 = Pin(5, Pin.OUT)          # Right motor pin 2
+
+# ================== WIFI ACCESS POINT ==================
+ssid = 'bps_explore'
+password = '123456789'
+
+ap = network.WLAN(network.AP_IF)
+ap.active(True)
+ap.ifconfig(('192.168.4.1', '255.255.255.0', '192.168.4.1', '8.8.8.8'))
+ap.config(essid=ssid, password=password)
+
+print("AP started...")
+print("Connect to WiFi:", ssid)
+print("Password:", password)
+print("Open browser → http://192.168.4.1")
+
+while not ap.active():
+    pass
+
+print("AP IP:", ap.ifconfig()[0])
+
+# ================== MOTOR FUNCTIONS ==================
+def stop():
+    ma1.off()
+    ma2.off()
+    mb1.off()
+    mb2.off()
+    led.off()
+
+def forward():
+    ma1.on()
+    ma2.off()
+    mb1.on()
+    mb2.off()
+    led.on()
+
+def backward():
+    ma1.off()
+    ma2.on()
+    mb1.off()
+    mb2.on()
+    led.off()
+
+def left():
+    # Left motor reverse, Right motor forward → Turn Left
+    ma1.off()
+    ma2.on()
+    mb1.on()
+    mb2.off()
+    led.off()
+
+def right():
+    # Left motor forward, Right motor reverse → Turn Right
+    ma1.on()
+    ma2.off()
+    mb1.off()
+    mb2.on()
+    led.on()
+
+# ================== WEB PAGE ==================
+def web_page():
+    html = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Robotic Vehicle Control</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            min-height: 100vh;
+            background: #111827;
+            color: #e5e7eb;
+            font-family: Arial, Helvetica, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .control-panel {
+            width: 100%;
+            max-width: 520px;
+            background: #1f2937;
+            border: 1px solid #374151;
+            border-radius: 16px;
+            padding: 30px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.35);
+        }
+        .header { text-align: center; margin-bottom: 25px; }
+        .header h1 { font-size: 26px; font-weight: 600; color: #f9fafb; margin-bottom: 8px; }
+        .header p { font-size: 14px; color: #9ca3af; }
+        .status {
+            display: flex; justify-content: center; align-items: center;
+            gap: 8px; margin-bottom: 25px; font-size: 14px; color: #d1d5db;
+        }
+        .status-dot {
+            width: 10px; height: 10px; background: #22c55e;
+            border-radius: 50%; box-shadow: 0 0 10px rgba(34,197,94,0.7);
+        }
+        .controls { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+        .control-row { display: flex; justify-content: center; gap: 12px; }
+        .control-button {
+            width: 90px; height: 70px;
+            border: 1px solid #4b5563; border-radius: 12px;
+            background: #374151; color: #f9fafb; font-size: 30px;
+            cursor: pointer; transition: 0.15s; user-select: none;
+            touch-action: manipulation;
+        }
+        .control-button:active {
+            transform: scale(0.94); background: #2563eb; border-color: #60a5fa;
+        }
+        .stop-button {
+            width: 194px; height: 60px; margin-top: 10px;
+            border: none; border-radius: 12px;
+            background: #dc2626; color: white; font-size: 17px; font-weight: 600;
+            cursor: pointer;
+        }
+        .stop-button:active { transform: scale(0.96); background: #b91c1c; }
+        .button-label {
+            display: block; font-size: 11px; color: #9ca3af;
+            margin-top: 5px; text-transform: uppercase; letter-spacing: 0.8px;
+        }
+        .footer {
+            text-align: center; margin-top: 25px; padding-top: 18px;
+            border-top: 1px solid #374151; font-size: 12px; color: #6b7280;
+        }
+        @media (max-width: 480px) {
+            .control-button { width: 78px; height: 65px; font-size: 26px; }
+            .stop-button { width: 168px; }
+        }
+    </style>
+    <script>
+        function sendRequest(command) {
+            var xhr = new XMLHttpRequest();
+            xhr.open("GET", "/?action=" + encodeURIComponent(command), true);
+            xhr.send();
+        }
+        function startMovement(command) { sendRequest(command); }
+        function stopMovement() { sendRequest("stop"); }
+        document.addEventListener("contextmenu", function(e) { e.preventDefault(); });
+    </script>
+</head>
+<body>
+    <main class="control-panel">
+        <header class="header">
+            <h1>Robotic Vehicle Control</h1>
+            <p>Remote Navigation Interface</p>
+        </header>
+        <div class="status">
+            <span class="status-dot"></span>
+            <span>System Ready</span>
+        </div>
+        <section class="controls">
+            <div class="control-row">
+                <div>
+                    <button class="control-button"
+                        onmousedown="startMovement('forward')"
+                        onmouseup="stopMovement()"
+                        ontouchstart="startMovement('forward')"
+                        ontouchend="stopMovement()"
+                        onmouseleave="stopMovement()">▲</button>
+                    <span class="button-label">Forward</span>
+                </div>
+            </div>
+            <div class="control-row">
+                <div>
+                    <button class="control-button"
+                        onmousedown="startMovement('left')"
+                        onmouseup="stopMovement()"
+                        ontouchstart="startMovement('left')"
+                        ontouchend="stopMovement()"
+                        onmouseleave="stopMovement()">◀</button>
+                    <span class="button-label">Left</span>
+                </div>
+                <div>
+                    <button class="control-button"
+                        onmousedown="startMovement('right')"
+                        onmouseup="stopMovement()"
+                        ontouchstart="startMovement('right')"
+                        ontouchend="stopMovement()"
+                        onmouseleave="stopMovement()">▶</button>
+                    <span class="button-label">Right</span>
+                </div>
+            </div>
+            <div class="control-row">
+                <div>
+                    <button class="control-button"
+                        onmousedown="startMovement('backward')"
+                        onmouseup="stopMovement()"
+                        ontouchstart="startMovement('backward')"
+                        ontouchend="stopMovement()"
+                        onmouseleave="stopMovement()">▼</button>
+                    <span class="button-label">Reverse</span>
+                </div>
+            </div>
+            <button class="stop-button" onclick="stopMovement()">■ &nbsp; STOP</button>
+        </section>
+        <footer class="footer">Robotic Vehicle Navigation System</footer>
+    </main>
+</body>
+</html>"""
+    return html
+
+# ================== SOCKET SERVER ==================
+so = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+so.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+so.bind(('', 80))
+so.listen(5)
+
+print("Server started. Waiting for connections...")
+
+while True:
+    try:
+        conn, addr = so.accept()
+        conn.settimeout(3.0)
+        print("Connection from:", addr)
+
+        request = conn.recv(1024)
+        request = str(request)
+        print("Request:", request)
+
+        # Better way to detect commands
+        if "action=forward" in request:
+            print("→ FORWARD")
+            forward()
+        elif "action=backward" in request:
+            print("→ BACKWARD")
+            backward()
+        elif "action=left" in request:
+            print("→ LEFT")
+            left()
+        elif "action=right" in request:
+            print("→ RIGHT")
+            right()
+        elif "action=stop" in request:
+            print("→ STOP")
+            stop()
+
+        # Send web page
+        response = web_page()
+        conn.send('HTTP/1.1 200 OK\r\n')
+        conn.send('Content-Type: text/html\r\n')
+        conn.send('Connection: close\r\n\r\n')
+        conn.sendall(response)
+        conn.close()
+
+    except OSError as e:
+        try:
+            conn.close()
+        except:
+            pass
+        print("Connection closed")

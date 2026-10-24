@@ -1,0 +1,310 @@
+try:
+    import usocket as socket
+except:
+    import socket
+
+from machine import Pin, PWM
+import camera as cam
+from utime import sleep_ms, sleep
+import network
+import gc
+
+gc.collect()
+
+# ================== WIFI CREDENTIALS ==================
+try:
+    from bps_cre import *
+    SSID = bps_ssid
+    PASSWORD = ssid_pas
+except:
+    SSID = "Your_WiFi_Name"          # ← Change this
+    PASSWORD = "Your_WiFi_Password"  # ← Change this
+
+# ================== PINS ==================
+# LED (PWM)
+led = PWM(Pin(4), freq=1000)
+led.duty(0)
+
+# Motor A (Left)
+IN1 = Pin(14, Pin.OUT)
+IN2 = Pin(15, Pin.OUT)
+ENA = PWM(Pin(2), freq=1000)      # Left motor speed
+
+# Motor B (Right) - Add these pins according to your wiring
+IN3 = Pin(13, Pin.OUT)            
+IN4 = Pin(12, Pin.OUT)            
+ENB = PWM(Pin(16), freq=1000)     
+
+# ================== MOTOR FUNCTIONS ==================
+def motor_stop():
+    IN1.off()
+    IN2.off()
+    IN3.off()
+    IN4.off()
+    ENA.duty(0)
+    ENB.duty(0)
+
+def motor_forward(speed):
+    IN1.on()
+    IN2.off()
+    IN3.on()
+    IN4.off()
+    ENA.duty(speed)
+    ENB.duty(speed)
+
+def motor_backward(speed):
+    IN1.off()
+    IN2.on()
+    IN3.off()
+    IN4.on()
+    ENA.duty(speed)
+    ENB.duty(speed)
+
+def motor_left(speed):
+    # Left motor reverse, Right motor forward
+    IN1.off()
+    IN2.on()
+    IN3.on()
+    IN4.off()
+    ENA.duty(speed)
+    ENB.duty(speed)
+
+def motor_right(speed):
+    # Left motor forward, Right motor reverse
+    IN1.on()
+    IN2.off()
+    IN3.off()
+    IN4.on()
+    ENA.duty(speed)
+    ENB.duty(speed)
+
+# ================== CAMERA ==================
+try:
+    cam.init(0, format=cam.JPEG, framesize=cam.FRAME_QVGA)  # 320x240
+    print("Camera initialized (QVGA)")
+except Exception as e:
+    print("Camera init failed:", e)
+    try:
+        cam.init(0, format=cam.JPEG)
+        print("Camera initialized (default)")
+    except Exception as e:
+        print("Camera completely failed:", e)
+
+# ================== WIFI CONNECTION ==================
+sta = network.WLAN(network.STA_IF)
+sta.active(True)
+sta.connect(SSID, PASSWORD)
+
+print("Connecting to WiFi...")
+while not sta.isconnected():
+    sleep(0.5)
+    print(".", end="")
+
+print("\nConnected!")
+ip = sta.ifconfig()[0]
+print("Open browser → http://" + ip)
+
+# ================== WEB PAGE ==================
+def web_page():
+    html = """<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <title>ESP32 Cam Robot</title>
+    <style>
+        body {
+            background-color: #111;
+            color: white;
+            text-align: center;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 10px;
+        }
+        img {
+            width: 100%;
+            max-width: 400px;
+            border: 3px solid #333;
+            border-radius: 8px;
+        }
+        .arrows {
+            font-size: 40px;
+            color: #ff3333;
+        }
+        td.button {
+            background-color: #222;
+            border-radius: 20%;
+            box-shadow: 4px 4px #555;
+            width: 80px;
+            height: 70px;
+        }
+        td.button:active {
+            transform: translate(4px,4px);
+            box-shadow: none;
+        }
+        a {
+            text-decoration: none;
+            display: block;
+            width: 100%;
+            height: 100%;
+            line-height: 70px;
+        }
+        .slider {
+            width: 100%;
+            height: 15px;
+            border-radius: 5px;
+            background: #444;
+            outline: none;
+        }
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 25px;
+            height: 25px;
+            border-radius: 50%;
+            background: red;
+            cursor: pointer;
+        }
+        table {
+            margin: 15px auto;
+        }
+    </style>
+</head>
+<body>
+    <h2>ESP32 Cam Robot</h2>
+    <img id="cameraImage" src="/stream">
+
+    <table CELLSPACING="12">
+        <tr>
+            <td></td>
+            <td class="button"><a href="/move?dir=1"><span class="arrows">⇧</span></a></td>
+            <td></td>
+        </tr>
+        <tr>
+            <td class="button"><a href="/move?dir=3"><span class="arrows">⇦</span></a></td>
+            <td class="button"><a href="/move?dir=0"><span class="arrows">⏹</span></a></td>
+            <td class="button"><a href="/move?dir=4"><span class="arrows">⇨</span></a></td>
+        </tr>
+        <tr>
+            <td></td>
+            <td class="button"><a href="/move?dir=2"><span class="arrows">⇩</span></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+    <div style="max-width:400px; margin:auto; text-align:left;">
+        <p><b>Speed:</b></p>
+        <input type="range" min="0" max="1023" value="600" class="slider" 
+               oninput='updateSlider("speed", this.value)'>
+
+        <p><b>Light:</b></p>
+        <input type="range" min="0" max="1023" value="0" class="slider" 
+               oninput='updateSlider("light", this.value)'>
+    </div>
+
+    <script>
+        function updateSlider(key, value) {
+            var xhr = new XMLHttpRequest();
+            xhr.open("GET", "/" + key + "?value=" + value, true);
+            xhr.send();
+        }
+    </script>
+</body>
+</html>"""
+    return html
+
+# ================== GLOBAL SPEED ==================
+current_speed = 600
+
+# ================== START SERVER ==================
+so = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+so.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+so.bind(('', 80))
+so.listen(2)
+
+print("Server started...")
+
+try:
+    while True:
+        conn, addr = so.accept()
+        conn.settimeout(3.0)
+        print("Connection from:", addr)
+
+        request = conn.recv(1024)
+        request = str(request)
+
+        # ---------- Motor Control ----------
+        if "/move?dir=" in request:
+            try:
+                dir_value = int(request.split("/move?dir=")[1].split(" ")[0])
+                if dir_value == 1:
+                    motor_forward(current_speed)
+                elif dir_value == 2:
+                    motor_backward(current_speed)
+                elif dir_value == 3:
+                    motor_left(current_speed)
+                elif dir_value == 4:
+                    motor_right(current_speed)
+                elif dir_value == 0:
+                    motor_stop()
+            except:
+                pass
+
+            response = web_page()
+            conn.send(b'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n')
+            conn.sendall(response)
+
+        # ---------- Speed Slider ----------
+        elif "/speed?value=" in request:
+            try:
+                current_speed = int(request.split("/speed?value=")[1].split(" ")[0])
+                current_speed = max(0, min(1023, current_speed))
+                print("Speed:", current_speed)
+            except:
+                pass
+            response = web_page()
+            conn.send(b'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n')
+            conn.sendall(response)
+
+        # ---------- Light Slider ----------
+        elif "/light?value=" in request:
+            try:
+                light_val = int(request.split("/light?value=")[1].split(" ")[0])
+                led.duty(max(0, min(1023, light_val)))
+            except:
+                pass
+            response = web_page()
+            conn.send(b'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n')
+            conn.sendall(response)
+
+        # ---------- Video Stream ----------
+        elif "/stream" in request:
+            conn.send(b'HTTP/1.1 200 OK\r\n')
+            conn.send(b'Content-Type: multipart/x-mixed-replace; boundary=frame\r\n\r\n')
+            try:
+                while True:
+                    img = cam.capture()
+                    if img:
+                        conn.send(b'--frame\r\n')
+                        conn.send(b'Content-Type: image/jpeg\r\n\r\n' + img + b'\r\n')
+                    sleep_ms(90)
+            except:
+                pass
+
+        # ---------- Main Page ----------
+        else:
+            response = web_page()
+            conn.send(b'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n')
+            conn.sendall(response)
+
+        conn.close()
+
+except KeyboardInterrupt:
+    print("Stopped by user")
+finally:
+    motor_stop()
+    led.duty(0)
+    try:
+        cam.deinit()
+    except:
+        pass
+    so.close()
+    print("Cleaned up")
